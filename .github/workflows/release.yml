@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "AutoCreamAPI ${{ github.ref_name }}"
+          releaseBody: |
+            ## What's New
+
+            Rust/Tauri rewrite of AutoCreamAPI.
+
+            ### Features
+            - Automatic Steam game discovery via local manifest parsing
+            - Dual-source DLC fetching (Steam Store + steamcmd.net)
+            - One-click CreamAPI apply/remove with backup management
+            - Dark themed UI with search, filtering, and hidden DLC detection
+
+            ### Downloads
+            - **`.exe`** — NSIS installer (recommended)
+            - **`.msi`** — MSI installer
+          releaseDraft: false
+          prerelease: false
