@@ -57,7 +57,6 @@ pub fn find_steam_path() -> Option<PathBuf> {
 
 /// Parse Steam's libraryfolders.vdf to find all library directories
 pub fn find_library_folders(steam_path: &Path) -> Vec<PathBuf> {
-    let vdf_path = steam_path.join("steamapps").join("libraryfolders.vdf");
     let mut folders = Vec::new();
 
     // Always include the main Steam directory
@@ -66,16 +65,24 @@ pub fn find_library_folders(steam_path: &Path) -> Vec<PathBuf> {
         folders.push(main_steamapps);
     }
 
-    if let Ok(content) = fs::read_to_string(&vdf_path) {
-        // Simple VDF parser — libraryfolders.vdf has entries like:
-        // "0" { "path" "C:\\SteamLibrary" ... }
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("\"path\"") {
-                if let Some(path_str) = extract_vdf_value(trimmed) {
-                    let lib_path = PathBuf::from(&path_str).join("steamapps");
-                    if lib_path.exists() && !folders.contains(&lib_path) {
-                        folders.push(lib_path);
+    // Try both known locations for libraryfolders.vdf
+    let vdf_paths = [
+        steam_path.join("steamapps").join("libraryfolders.vdf"),
+        steam_path.join("config").join("libraryfolders.vdf"),
+    ];
+
+    for vdf_path in &vdf_paths {
+        if let Ok(content) = fs::read_to_string(vdf_path) {
+            // Simple VDF parser — libraryfolders.vdf has entries like:
+            // "0" { "path" "C:\\SteamLibrary" ... }
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("\"path\"") {
+                    if let Some(path_str) = extract_vdf_value(trimmed) {
+                        let lib_path = PathBuf::from(&path_str).join("steamapps");
+                        if lib_path.exists() && !folders.contains(&lib_path) {
+                            folders.push(lib_path);
+                        }
                     }
                 }
             }
@@ -160,8 +167,8 @@ fn parse_acf(content: &str, steamapps_dir: &Path) -> Option<SteamGame> {
 
     // Only show games that have Steam API DLLs
     if !has_x86 && !has_x64 {
-        // Search one level deep in subdirectories
-        let (sub_x86, sub_x64, sub_applied) = scan_subdirs_for_steam_api(&game_dir);
+        // Recursively search subdirectories for steam_api DLLs
+        let (sub_x86, sub_x64, sub_applied) = scan_subdirs_for_steam_api(&game_dir, 0);
         if !sub_x86 && !sub_x64 {
             return None;
         }
@@ -185,9 +192,15 @@ fn parse_acf(content: &str, steamapps_dir: &Path) -> Option<SteamGame> {
     })
 }
 
-/// Search one level of subdirectories for steam_api DLLs
-fn scan_subdirs_for_steam_api(game_dir: &Path) -> (bool, bool, bool) {
-    if let Ok(entries) = fs::read_dir(game_dir) {
+/// Maximum depth to search subdirectories for steam_api DLLs
+const MAX_SEARCH_DEPTH: u32 = 4;
+
+/// Recursively search subdirectories for steam_api DLLs
+fn scan_subdirs_for_steam_api(dir: &Path, depth: u32) -> (bool, bool, bool) {
+    if depth >= MAX_SEARCH_DEPTH {
+        return (false, false, false);
+    }
+    if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let sub = entry.path();
@@ -197,6 +210,11 @@ fn scan_subdirs_for_steam_api(game_dir: &Path) -> (bool, bool, bool) {
                     sub.join("steam_api_o.dll").exists() || sub.join("steam_api64_o.dll").exists();
                 if x86 || x64 {
                     return (x86, x64, applied);
+                }
+                // Recurse deeper
+                let (rx86, rx64, rapplied) = scan_subdirs_for_steam_api(&sub, depth + 1);
+                if rx86 || rx64 {
+                    return (rx86, rx64, rapplied);
                 }
             }
         }

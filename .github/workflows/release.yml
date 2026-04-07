@@ -43,13 +43,10 @@ jobs:
           releaseBody: |
             ## What's New
 
-            Rust/Tauri rewrite of AutoCreamAPI.
-
-            ### Features
-            - Automatic Steam game discovery via local manifest parsing
-            - Dual-source DLC fetching (Steam Store + steamcmd.net)
-            - One-click CreamAPI apply/remove with backup management
-            - Dark themed UI with search, filtering, and hidden DLC detection
+            ### Improvements
+            - Deep recursive search for steam_api DLLs (up to 4 levels deep) — finds games that place DLLs in nested directories like `Binaries/Win64/`
+            - Check both `steamapps/libraryfolders.vdf` and `config/libraryfolders.vdf` for Steam library discovery across all drives
+            - Recursive CreamAPI apply and removal to match deep DLL locations
 
             ### Downloads
             - **`.exe`** — NSIS installer (recommended)

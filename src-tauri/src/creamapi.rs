@@ -141,6 +141,9 @@ pub fn remove(install_dir: &str) -> ApplyResult {
 }
 
 /// Find the directory containing steam_api DLLs (root or one level deep)
+/// Maximum depth to search subdirectories for steam_api DLLs
+const MAX_SEARCH_DEPTH: u32 = 4;
+
 fn find_steam_api_dir(game_dir: &Path, has_x86: bool, has_x64: bool) -> std::path::PathBuf {
     if has_x86 && game_dir.join("steam_api.dll").exists() {
         return game_dir.to_path_buf();
@@ -149,37 +152,65 @@ fn find_steam_api_dir(game_dir: &Path, has_x86: bool, has_x64: bool) -> std::pat
         return game_dir.to_path_buf();
     }
 
-    // Search subdirectories
-    if let Ok(entries) = fs::read_dir(game_dir) {
+    // Recursively search subdirectories
+    if let Some(found) = find_steam_api_dir_recursive(game_dir, has_x86, has_x64, 0) {
+        return found;
+    }
+
+    game_dir.to_path_buf()
+}
+
+fn find_steam_api_dir_recursive(
+    dir: &Path,
+    has_x86: bool,
+    has_x64: bool,
+    depth: u32,
+) -> Option<std::path::PathBuf> {
+    if depth >= MAX_SEARCH_DEPTH {
+        return None;
+    }
+    if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let sub = entry.path();
                 if (has_x86 && sub.join("steam_api.dll").exists())
                     || (has_x64 && sub.join("steam_api64.dll").exists())
                 {
-                    return sub;
+                    return Some(sub);
+                }
+                if let Some(found) =
+                    find_steam_api_dir_recursive(&sub, has_x86, has_x64, depth + 1)
+                {
+                    return Some(found);
                 }
             }
         }
     }
-
-    game_dir.to_path_buf()
+    None
 }
 
-/// Get all directories to check for removal (root + one level deep)
+/// Get all directories to check for removal (root + recursive)
 fn get_dirs_to_check(game_dir: &Path) -> Vec<std::path::PathBuf> {
     let mut dirs = vec![game_dir.to_path_buf()];
-    if let Ok(entries) = fs::read_dir(game_dir) {
+    collect_cream_dirs(game_dir, &mut dirs, 0);
+    dirs
+}
+
+fn collect_cream_dirs(dir: &Path, dirs: &mut Vec<std::path::PathBuf>, depth: u32) {
+    if depth >= MAX_SEARCH_DEPTH {
+        return;
+    }
+    if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let sub = entry.path();
                 if sub.join("steam_api_o.dll").exists() || sub.join("steam_api64_o.dll").exists() {
-                    dirs.push(sub);
+                    dirs.push(sub.clone());
                 }
+                collect_cream_dirs(&sub, dirs, depth + 1);
             }
         }
     }
-    dirs
 }
 
 /// Apply a single CreamAPI DLL: backup original, write replacement

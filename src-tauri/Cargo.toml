@@ -1,6 +1,6 @@
 [package]
 name = "auto-cream-api"
-version = "0.1.0"
+version = "1.1.0"
 description = "Automatically set up CreamAPI for Steam games"
 authors = ["moosh"]
 license = "GPL-3.0"
